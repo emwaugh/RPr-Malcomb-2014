@@ -108,7 +108,9 @@ ta_errors <- ta[c(162, 224), ]
 # creates a buffer around the lakes as a mask to clip two 'outlier' features from the Traditional Authorities
 lake_clip <- lakes %>%
   st_transform(3395) %>%
+  # 3395 is local UTM zone, in this you can use meters to buffer
   st_buffer(625) %>%
+  # then back to 4326 to match other data
   st_transform(4326)
 
 ta_errors <- st_difference(ta_errors, lake_clip) %>%

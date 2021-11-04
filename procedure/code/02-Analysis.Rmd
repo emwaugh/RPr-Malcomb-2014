@@ -93,21 +93,21 @@ lakes = st_as_sf(read_csv(here(public_r, "major_lakes.csv"))[, c("name", "the_ge
 ```
 
 ```{r reading 2010 adaptive capacity data}
-dhsclusters_2010 = readRDS(here(private_r, "datasets", "MWGE62FL.rds")) %>%
+dhsclusters_2010 <- readRDS(here(private_r, "datasets", "MWGE62FL.rds")) %>%
   as("sf") %>% 
   st_transform(3395) %>% 
   # joining id for traditional authorities and livelihood zones to dhs clusters
   st_join(st_transform(select(ta_gref, ID_2),3395)) %>% 
-  st_join(st_transform(select(lhz_v, FNID),3395)) %>% 
+#  st_join(st_transform(select(lhz_v, FNID),3395)) %>% 
   rename(ta_id = ID_2,
-         lhz_id = FNID,
+      #   lhz_id = FNID,
          urban_rural = URBAN_RURA)
 
 dhshh_2010 = readRDS(here(private_r, "datasets", "MWHR61SV.rds")) %>% zap_labels()
 ```
 
 ```{r households to remove}
-rmv_2010 = dhshh_2010 %>%  
+rmv_2010 <- dhshh_2010 %>%  
   filter(
   HV246A == 98 |
     HV246A == 99 |
@@ -132,7 +132,7 @@ rmv_2010 = dhshh_2010 %>%
 ```
 
 ```{r capacity in households 2010}
-hh_capacity_t = dhshh_2010 %>%
+hh_capacity_t <- dhshh_2010 %>%
   # joining traditional authority ids and urban_rural column 
   left_join(st_drop_geometry(select(dhsclusters_2010, DHSCLUST, ta_id, urban_rural)), by = c("HV001" = "DHSCLUST")) %>%
   select(
@@ -165,9 +165,10 @@ hh_capacity_t = dhshh_2010 %>%
   filter(!(is.na(HV246A) & is.na(HV246D) & is.na(HV246E)  & is.na(HV246G) )) %>% 
   # 23543 features of 19 variables 
   # using rowwise() to find sum of livestock by household --> go through every row of table
-  # and calulate something for each one
+  # and calculate something for each one
   rowwise %>%
   mutate(hhlivestock = sum(HV246A, HV246D, HV246E, HV246G, na.rm = T)) %>%
+  # rowwise() creates a group for every row. must ungroup now:
   ungroup %>%
   # using percent_rank(), those  
   # in cases where desc() is used, having a greater value before ranked makes a household more vulnerable 
@@ -216,7 +217,7 @@ hh_capacity_t <- hh_capacity_t %>%
       # 23543 features of 34 variables 
 ```
 
-``` {r summary stats for tas at hh level before pullings nas}
+``` {r summary stats for tas at hh level before pulling nas}
 hh_stats <- stat.desc(hh_capacity_t[,21:33]) %>%
   mutate_if(is.numeric, round, digits=1)
 hh_stats
@@ -256,7 +257,7 @@ hh_capacity_stats
 
 ```{r joining 2010 capacity to ta and creating breaks for visualization}
 # join mean capacity to traditional authorities
-ta_v = left_join(
+ta_v <- left_join(
   ta_gref,
   select(ta_capacity_t, ta_id, capacity_2010 = capacity_avg),
   by = c("ID_2" = "ta_id")
@@ -317,7 +318,7 @@ b = st_bbox(
   st_as_sfc()
 
 # where raster = 1, you have flood visualized
-blank = st_as_stars(st_bbox(b), dx = 0.041667, dy = 0.041667)
+blank = st_as_stars(st_bbox(b), dx = 0.083333, dy = 0.083333)
 blank[[1]][] = NA
 
 # reprojecting, clipping, and resampling rasters to new extent and cell size
@@ -373,10 +374,10 @@ lhz_sensitivity_v  = lhz_v %>%
   rowwise %>%
   mutate(
     livelihoodSensitivity_new = sum(
-      ownCrop * 6,
-      wageIncome * 6,
-      cashCropIncome * 4,
-      newDisaster * 4) 
+      ownCrop * 0.06,
+      wageIncome * 0.06,
+      cashCropIncome * 0.04,
+      newDisaster * 0.04)
   ) %>% ungroup
 # livelihood sensitivity range is now 23.529 to 56.000
 # making capacity rasters 
@@ -502,8 +503,8 @@ map_2010
 ```
 
 ```{r find break & limit values for vulnerability map}
-vuln_max <- max(ta_r[[1]],na.rm = TRUE)
-vuln_min <- min(ta_r[[1]],na.rm = TRUE)
+vuln_max <- max(final[[1]],na.rm = TRUE)
+vuln_min <- min(final[[1]],na.rm = TRUE)
 ``` 
 
 ```{r vulnerability map}
@@ -520,7 +521,7 @@ vuln_map = ggplot() +
   geom_sf(data = ea,
           fill = clrs,
           color = NA) +
-  geom_stars(data = ta_r) +
+  geom_stars(data = final) +
   scale_fill_gradient(
     low = "#FFFF75",
     high = "#CF4611",
@@ -620,7 +621,7 @@ orfig5vect =
   mutate(bg_mean = bmean + gmean)
 # load original georeferenced figure 5 data
 
-orfig5rast = st_rasterize(orfig5vect["bg_mean"], template=ta_r)
+orfig5rast = st_rasterize(orfig5vect["bg_mean"], template=final)
 # convert mean of blue and green values into a raster using ta_final as a reference for raster
 # extent, cell size, CRS, etc.
 
@@ -633,15 +634,15 @@ orfig5rast = orfig5rast %>%
 )  # or is Re-scaled from 0 to 1 with (value - min)/(max - min)
 # it is also inverted, because higher blue values are less red
 
-ta_r = ta_r %>% 
+final = final %>% 
   mutate(rp =
-           (vuln - min(ta_r[[1]], na.rm= TRUE)) /
-           (max(ta_r[[1]], na.rm= TRUE) -
-            min(ta_r[[1]], na.rm= TRUE)
+           (capacity_2010 - min(final[[1]], na.rm= TRUE)) /
+           (max(final[[1]], na.rm= TRUE) -
+            min(final[[1]], na.rm= TRUE)
         )
 )  # rp is Re-scaled from 0 to 1 with (value - min)/(max - min)
 
-fig5comp = c( select(ta_r,"rp"), select(orfig5rast,"or"))
+fig5comp = c( select(final,"rp"), select(orfig5rast,"or"))
 # combine the original (or) fig 5 and reproduced (rp) fig 5
 
 fig5comp = fig5comp %>% mutate( diff = rp - or )
